@@ -72,6 +72,14 @@ The Entra Agent ID **identity pattern is identical across all three** Microsoft-
 - ✅ Publication-grade skills authored for both deploy and teardown.
 - 🟡 Upstream PRs to `microsoft/entra-agentid-samples` pending.
 
+## Learning resources
+
+Before deploying, read [**docs/concepts.md**](./docs/concepts.md) — a reader's guide covering:
+
+1. **The architecture, in plain English** — three pods explained box-by-box, with the request/response flow when a user asks "What's the weather in Seattle?"
+2. **Prerequisites** — what you must bring (Blueprint + Agent Identity from `entra-agent-id-setup`) vs what this repo creates for you.
+3. **Choosing AKS vs ACA vs App Service** — a detailed decision matrix with the *why* spelled out for each scenario.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
