@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+*.md
+docs/
+templates/__pycache__/
+__pycache__/
+*.pyc
+.DS_Store

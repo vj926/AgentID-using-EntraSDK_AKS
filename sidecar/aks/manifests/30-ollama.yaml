@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: agentid
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: agentid
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: ollama }
+  template:
+    metadata:
+      labels: { app: ollama }
+    spec:
+      # Init container pulls the model once into the PVC so the main
+      # container starts fast and the model survives pod restarts.
+      initContainers:
+        - name: model-puller
+          image: ollama/ollama:latest
+          command: ["/bin/sh","-c"]
+          # Use $OLLAMA_MODEL (no braces) so envsubst leaves runtime expansion
+          # to bash. With ${OLLAMA_MODEL}, envsubst would bake the model name
+          # into the args at apply time, defeating future `kubectl set env`.
+          args:
+            - |
+              set -e
+              ollama serve &
+              PID=$!
+              until ollama list >/dev/null 2>&1; do sleep 1; done
+              if ! ollama list | awk '{print $1}' | grep -q "^$OLLAMA_MODEL$"; then
+                echo "Pulling $OLLAMA_MODEL..."
+                ollama pull "$OLLAMA_MODEL"
+              else
+                echo "$OLLAMA_MODEL already present, skipping pull."
+              fi
+              kill $PID
+              wait $PID 2>/dev/null || true
+          env:
+            - { name: OLLAMA_MODEL, value: "${OLLAMA_MODEL}" }
+            - { name: OLLAMA_HOST,  value: "0.0.0.0:11434" }
+            - { name: HOME,         value: "/root" }
+          volumeMounts:
+            - { name: models, mountPath: /root/.ollama }
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+          env:
+            - { name: OLLAMA_HOST, value: "0.0.0.0:11434" }
+          volumeMounts:
+            - { name: models, mountPath: /root/.ollama }
+          resources:
+            requests: { cpu: "500m", memory: "2Gi" }
+            limits:   { cpu: "2",    memory: "4Gi" }
+          readinessProbe:
+            tcpSocket: { port: 11434 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: ollama-models
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: agentid
+spec:
+  type: ClusterIP
+  selector: { app: ollama }
+  ports:
+    - name: http
+      port: 11434
+      targetPort: 11434

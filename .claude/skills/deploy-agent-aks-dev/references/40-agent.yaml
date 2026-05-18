@@ -1,0 +1,81 @@
+# Agent pod = llm-agent + auth-sidecar (true sidecar, same trust boundary).
+# weather-api and ollama are reached via in-cluster Services.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-agent
+  namespace: agentid
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: llm-agent }
+  template:
+    metadata:
+      labels:
+        app: llm-agent
+        # Required for the Azure Workload Identity mutating webhook to
+        # inject AZURE_* env vars and the projected SA token volume.
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: agent-sa
+      containers:
+        - name: llm-agent
+          image: "${ACR_NAME}.azurecr.io/agent-id-dev/llm-agent:1.0.0"
+          ports:
+            - containerPort: 3000
+          env:
+            - { name: TENANT_ID,         value: "${TENANT_ID}" }
+            - { name: BLUEPRINT_APP_ID,  value: "${BLUEPRINT_APP_ID}" }
+            - { name: AGENT_APP_ID,      value: "${AGENT_CLIENT_ID}" }
+            - { name: AGENT_CLIENT_ID,   value: "${AGENT_CLIENT_ID}" }
+            - { name: CLIENT_SPA_APP_ID, value: "${CLIENT_SPA_APP_ID}" }
+            - { name: SIDECAR_URL,       value: "http://localhost:5000" }
+            - { name: WEATHER_API_URL,   value: "http://weather-api.agentid.svc.cluster.local:8080" }
+            - { name: OLLAMA_URL,        value: "http://ollama.agentid.svc.cluster.local:11434" }
+            - { name: OLLAMA_MODEL,      value: "${OLLAMA_MODEL}" }
+          resources:
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "1Gi" }
+          volumeMounts:
+            - name: patched-app
+              mountPath: /app/app.py
+              subPath: app.py
+          readinessProbe:
+            httpGet: { path: /, port: 3000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+        - name: sidecar
+          image: mcr.microsoft.com/entra-sdk/auth-sidecar:1.0.0-azurelinux3.0-distroless
+          # Sidecar listens on localhost only — never exposed via Service.
+          env:
+            - { name: AzureAd__Instance, value: "https://login.microsoftonline.com/" }
+            - { name: AzureAd__TenantId, value: "${TENANT_ID}" }
+            - { name: AzureAd__ClientId, value: "${BLUEPRINT_APP_ID}" }
+            # Workload Identity: the projected SA token IS the signed
+            # assertion the Blueprint app's FIC accepts. Read it from disk.
+            - { name: AzureAd__ClientCredentials__0__SourceType,
+                value: "SignedAssertionFilePath" }
+            - { name: AzureAd__ClientCredentials__0__SignedAssertionFileDiskPath,
+                value: "/var/run/secrets/azure/tokens/azure-identity-token" }
+            # Autonomous (app-only) downstream
+            - { name: DownstreamApis__graph-app__BaseUrl,
+                value: "https://graph.microsoft.com/v1.0/" }
+            - { name: DownstreamApis__graph-app__Scopes__0,
+                value: "https://graph.microsoft.com/.default" }
+            - { name: DownstreamApis__graph-app__RequestAppToken,
+                value: "true" }
+            # OBO downstream
+            - { name: DownstreamApis__graph__BaseUrl,
+                value: "https://graph.microsoft.com/v1.0/" }
+            - { name: DownstreamApis__graph__Scopes__0,
+                value: "https://graph.microsoft.com/.default" }
+            - { name: ASPNETCORE_ENVIRONMENT, value: "Production" }
+            - { name: ASPNETCORE_URLS,        value: "http://+:5000" }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: patched-app
+          configMap:
+            name: llm-agent-patch

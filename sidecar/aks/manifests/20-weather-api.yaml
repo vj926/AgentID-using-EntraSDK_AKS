@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-api
+  namespace: agentid
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: weather-api }
+  template:
+    metadata:
+      labels: { app: weather-api }
+    spec:
+      containers:
+        - name: weather-api
+          image: "${ACR_NAME}.azurecr.io/agent-id-dev/weather-api:1.0.0"
+          ports:
+            - containerPort: 8080
+          env:
+            - { name: TENANT_ID, value: "${TENANT_ID}" }
+            - { name: VALIDATE_TOKEN_SIGNATURE, value: "true" }
+          volumeMounts:
+            - name: patched-app
+              mountPath: /app/app.py
+              subPath: app.py
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: patched-app
+          configMap:
+            name: weather-api-patch
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: weather-api
+  namespace: agentid
+spec:
+  type: ClusterIP
+  selector: { app: weather-api }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

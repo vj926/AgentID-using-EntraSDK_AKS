@@ -1,0 +1,28 @@
+# Local-only / sensitive
+deploy-vars.sh
+*deploy-vars.sh
+*.env
+.env
+*.local
+
+# Upstream reference clone (not ours to redistribute)
+reference/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Build artifacts
+node_modules/
+__pycache__/
+*.pyc
+dist/
+build/
+
+# Secrets just in case
+*.pem
+*.key
+*.pfx

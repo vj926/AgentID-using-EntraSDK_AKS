@@ -1,0 +1,14 @@
+# LoadBalancer keeps things simple — no ingress controller required.
+# Swap to type ClusterIP + an Ingress object if you have NGINX/AGIC installed.
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-agent
+  namespace: agentid
+spec:
+  type: LoadBalancer
+  selector: { app: llm-agent }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
