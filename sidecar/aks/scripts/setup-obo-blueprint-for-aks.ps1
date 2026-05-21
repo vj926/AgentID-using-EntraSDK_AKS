@@ -50,9 +50,39 @@ $scopeBody = @{
 } | ConvertTo-Json -Depth 10
 Invoke-MgGraphRequest -Method PATCH -Uri $bpUri -Body $scopeBody -ContentType 'application/json'
 
-Write-Host "Step C: verify"
+Write-Host "Step C: verify (read-back)"
 $bp = Invoke-MgGraphRequest -Method GET -Uri ($bpUri + '?$select=identifierUris,api')
 $bp | ConvertTo-Json -Depth 10
+
+$persistedUris   = @($bp.identifierUris)
+$persistedScopes = @(@($bp.api.oauth2PermissionScopes) | ForEach-Object { $_.value })
+
+if ($persistedUris -notcontains $appIdUri -or $persistedScopes -notcontains 'access_as_user') {
+    Write-Error @"
+PATCH returned success but Entra did NOT persist the changes on the Blueprint app.
+
+Observed after PATCH:
+  identifierUris : $($persistedUris -join ', ')
+  scopes         : $($persistedScopes -join ', ')
+
+This usually means the Blueprint app is platform-managed (createdByAppId =
+the Entra Agent ID first-party service) and your tenant policy is silently
+rejecting writes to identifierUris / oauth2PermissionScopes.
+
+Mitigations:
+  1. Sign in as a Global Administrator and re-run (current Connect-MgGraph
+     consent may have been granted to a less-privileged principal).
+  2. Try the same change in the Entra portal:
+       App registrations -> $BlueprintAppId -> Expose an API ->
+       set 'Application ID URI' to $appIdUri, then 'Add a scope' access_as_user.
+     If the portal also refuses or the value disappears on refresh, the
+     Blueprint app is locked by the platform in this tenant.
+  3. If portal also refuses, open a support ticket against the Entra Agent
+     ID team — the platform is preventing OBO configuration on this Blueprint.
+"@
+    exit 2
+}
+Write-Host "  ✅ identifierUris and access_as_user verified on Blueprint"
 
 Write-Host "Step D: add requiredResourceAccess on Client SPA"
 $spaUri  = "https://graph.microsoft.com/v1.0/applications(appId='$ClientSpaAppId')"
