@@ -56,10 +56,31 @@ kubectl exec     -n agentid deploy/llm-agent -c sidecar -- env | grep ^AZURE_
 | Symptom | Cause | Fix |
 |---|---|---|
 | OBO sign-in fails with `AADSTS65001` | Agent → Graph User.Read not admin-consented | Run `scripts/grant-agent-obo-consent.ps1` (AKS-local copy) |
+| OBO sign-in fails with `AADSTS65001` **after** running `grant-agent-obo-consent.ps1` and it printed "User.Read already granted. Nothing to do." | Existing grant is `consentType=Principal` (per-user, brittle). The script's early-return matched the scope but ignored the consentType. A different signed-in user can't reuse a Principal grant. | Add an `AllPrincipals` grant — use the one-liner below the table. |
+| OBO sign-in fails with `AADSTS500011: The resource principal named api://<BlueprintAppId> was not found in the tenant` | Blueprint app's `identifierUris` is empty (or the SP itself doesn't exist) | First confirm SP exists: `az ad sp show --id $BLUEPRINT_APP_ID` — if missing, `az ad sp create --id $BLUEPRINT_APP_ID`. Then run `scripts/setup-obo-blueprint-for-aks.ps1` and confirm the script's verify step prints `✅ identifierUris and access_as_user verified on Blueprint`. |
+| `setup-obo-blueprint-for-aks.ps1` exits with `PATCH returned success but Entra did NOT persist the changes` | Blueprint app is platform-managed (`@odata.type: agentIdentityBlueprintPrincipal`, `createdByAppId` = Entra Agent ID first-party SP). Tenant silently rolls back writes to `identifierUris` / scopes. | (1) Re-run as Cloud Application Administrator (or higher). (2) Try setting `Application ID URI` manually in Entra portal → App registrations → Blueprint → Expose an API. (3) If portal also refuses, open a support ticket against the Entra Agent ID team — no client-side fix. |
+| `setup-obo-blueprint-for-aks.ps1` or `grant-agent-obo-consent.ps1` errors with `The term 'Connect-MgGraph' is not recognized` | Microsoft Graph PowerShell module not installed on this host | `pwsh -Command "Install-Module Microsoft.Graph -Scope CurrentUser -Force -AllowClobber"`. Minimal install if preferred: `Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Applications -Scope CurrentUser -Force`. |
 | OBO sign-in fails with `AADSTS50011: redirect URI mismatch` | Agent FQDN not added to SPA app | Run `scripts/add-spa-redirect-uri.sh` with `APP_FQDN=<LB IP>` |
 | OBO sign-in works but agent can't call Graph as user | Blueprint not configured for OBO | Re-run `scripts/setup-obo-blueprint-for-aks.ps1` |
 | weather-api returns 401 to agent | `TENANT_ID` env on weather-api wrong, or `appid` in token doesn't match Agent ID | Confirm both containers see the same `TENANT_ID`; check `kubectl logs deploy/weather-api` for the validation error |
 | Sign-in popup throws `pkce_not_created: TypeError: Cannot read properties of undefined (reading 'subtle')` | MSAL needs `window.crypto.subtle`, which browsers gate on **secure context**. `http://<raw-IP>` is not a secure context; `http://localhost:*` is exempt. | Run `scripts/port-forward.sh` and use `http://localhost:8080` for sign-in. Production-style fix: front the Service with HTTPS (cert-manager + NGINX, or AGIC + Key Vault). |
+| OBO fix was applied but browser still shows the old error | MSAL.js caches failed token requests in sessionStorage | Use a **private/incognito** window, or DevTools → Application → Storage → Clear site data, then hard-refresh. |
+| OBO works but we only want a subset of users to access the agent | Tenant-wide `AllPrincipals` consent + no assignment gating = anyone in the tenant can sign in | Keep `AllPrincipals` consent; enable **Assignment required** on the Agent SP and assign only the intended users/group. See [obo-preflight-checklist.md](./obo-preflight-checklist.md) row 11. |
+
+**`AllPrincipals` grant one-liner** (for the second row above — adds tenant-wide Agent → Graph `User.Read`):
+
+```powershell
+pwsh -Command @'
+Connect-MgGraph -Scopes "DelegatedPermissionGrant.ReadWrite.All","Application.Read.All" -TenantId "<TENANT_ID>" -NoWelcome
+$agent = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/servicePrincipals(appId='<AGENT_APP_ID>')?`$select=id"
+$graph = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/servicePrincipals(appId='00000003-0000-0000-c000-000000000000')?`$select=id"
+$body  = @{ clientId=$agent.id; consentType="AllPrincipals"; resourceId=$graph.id; scope="User.Read" } | ConvertTo-Json
+$r = Invoke-MgGraphRequest -Method POST -Uri "https://graph.microsoft.com/v1.0/oauth2PermissionGrants" -Body $body -ContentType "application/json"
+"Granted AllPrincipals. id=$($r.id) scope=$($r.scope)"
+'@
+```
+
+> **Walk the [OBO pre-flight checklist](./obo-preflight-checklist.md) before enabling OBO** — most of the failures in this table are caught by that 12-row checklist in 2 minutes.
 
 ## Cross-tenant federation
 

@@ -26,10 +26,20 @@ $existing = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/
 Write-Host "Existing grants: $($existing.value.Count)"
 $existing.value | ForEach-Object { Write-Host "  scope='$($_.scope)' consentType=$($_.consentType)" }
 
-$hasUserRead = $existing.value | Where-Object { $_.scope -match 'User\.Read' } | Select-Object -First 1
-if ($hasUserRead) {
-    Write-Host "User.Read already granted ($($hasUserRead.scope)). Nothing to do."
+# IMPORTANT: a Principal-typed (per-user) grant does NOT satisfy other users'
+# OBO calls — they'll still hit AADSTS65001. Only short-circuit when a
+# tenant-wide AllPrincipals grant already covers User.Read.
+$hasAllPrincipalsUserRead = $existing.value | Where-Object {
+    $_.consentType -eq 'AllPrincipals' -and $_.scope -match '(^|\s)User\.Read(\s|$)'
+} | Select-Object -First 1
+if ($hasAllPrincipalsUserRead) {
+    Write-Host "✅ Tenant-wide (AllPrincipals) User.Read already granted ($($hasAllPrincipalsUserRead.scope)). Nothing to do."
     return
+}
+
+$hasPrincipalOnly = $existing.value | Where-Object { $_.consentType -eq 'Principal' -and $_.scope -match 'User\.Read' } | Select-Object -First 1
+if ($hasPrincipalOnly) {
+    Write-Host "⚠️  Found a Principal (per-user) grant for User.Read — this does NOT cover other users. Adding tenant-wide AllPrincipals grant now..."
 }
 
 $body = @{

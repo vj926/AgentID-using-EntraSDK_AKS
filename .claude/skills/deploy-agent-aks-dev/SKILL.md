@@ -284,6 +284,7 @@ Persisted in `/tmp/deploy-vars.sh`:
 - [Adapting to EKS / GKE / on-prem](./references/non-azure-k8s.md) — the only Azure-specific pieces and what replaces them
 - [Local smoke test on `kind`](./references/smoke-test.md) — what's covered, what's not, how to interpret failures
 - [Troubleshooting matrix](./references/troubleshooting.md) — symptom → cause → fix tables
+- [OBO pre-flight checklist](./references/obo-preflight-checklist.md) — **walk this before enabling OBO**; 12 quick checks that catch the failures we hit in real engagements (Microsoft.Graph module, signed-in role, missing SPs, consentType=AllPrincipals vs Principal, browser cache, etc.)
 
 ## Paired skills
 
