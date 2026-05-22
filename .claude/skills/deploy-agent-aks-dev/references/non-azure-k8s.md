@@ -1,6 +1,6 @@
 # Adapting to non-Azure Kubernetes
 
-The manifests in `sidecar/aks/manifests/` are 95% portable. Only the credential injection differs by platform.
+The manifests in [`../manifests/`](../manifests/) are 95% portable. Only the credential injection differs by platform.
 
 ## What stays the same on EKS / GKE / on-prem
 

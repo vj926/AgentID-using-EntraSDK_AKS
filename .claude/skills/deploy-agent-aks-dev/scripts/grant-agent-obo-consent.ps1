@@ -5,7 +5,7 @@
 # This is the AKS copy of grant-agent-obo-consent.ps1 — content is identical to
 # the ACA version because the Entra/Graph operation is k8s-agnostic. It lives
 # here too so the AKS skill is self-contained and the PR ships it alongside the
-# manifests in sidecar/aks/.
+# manifests in this skill's manifests/ directory.
 #
 # Cross-tenant: -TenantId is the Entra tenant where the Agent app lives (which
 # can differ from the Azure subscription tenant).

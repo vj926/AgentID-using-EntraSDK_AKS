@@ -27,29 +27,6 @@ done
 
 kubectl apply -f "$OUT/00-namespace.yaml"
 kubectl apply -f "$OUT/10-serviceaccount.yaml"
-
-# Patched weather-api app.py (longer Open-Meteo timeouts + retry).
-PATCH_WAPI="$SCRIPT_DIR/../weather-api-patched/app.py"
-if [[ -f "$PATCH_WAPI" ]]; then
-  kubectl create configmap weather-api-patch -n agentid \
-    --from-file=app.py="$PATCH_WAPI" \
-    --dry-run=client -o yaml | kubectl apply -f -
-else
-  echo "WARN: $PATCH_WAPI not found — weather-api will use upstream timeouts." >&2
-fi
-
-# Patched llm-agent app.py (raise weather-api call timeout 10s -> 45s,
-# clearer error message). Needed because upstream's 10s is too aggressive
-# when Open-Meteo geocoding/forecast is slow from inside AKS.
-PATCH_AGENT="$SCRIPT_DIR/../llm-agent-patched/app.py"
-if [[ -f "$PATCH_AGENT" ]]; then
-  kubectl create configmap llm-agent-patch -n agentid \
-    --from-file=app.py="$PATCH_AGENT" \
-    --dry-run=client -o yaml | kubectl apply -f -
-else
-  echo "WARN: $PATCH_AGENT not found — llm-agent will use upstream 10s timeout." >&2
-fi
-
 kubectl apply -f "$OUT/20-weather-api.yaml"
 kubectl apply -f "$OUT/30-ollama.yaml"
 kubectl apply -f "$OUT/40-agent.yaml"

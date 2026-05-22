@@ -6,16 +6,37 @@ set -euo pipefail
 : "${ACR_NAME:?}"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-REPO_ROOT="$( cd "$SCRIPT_DIR/../../.." && pwd )"
 
-echo "[1/2] llm-agent"
+# Locate the sidecar source dirs (`dev/` and `weather-api/`). Two supported layouts:
+#   A) Upstream repo layout: <repo>/sidecar/{dev,weather-api,aks}      (when this
+#      skill is shipped inside microsoft/entra-agentid-samples)
+#   B) Reference-clone layout: <ws>/reference/repo/sidecar/{dev,weather-api}
+#      (when developing this skill outside the upstream repo)
+find_sidecar_root() {
+  local candidate
+  for candidate in \
+      "$SCRIPT_DIR/../../../../sidecar" \
+      "$SCRIPT_DIR/../../../sidecar" \
+      "$SCRIPT_DIR/../../../reference/repo/sidecar" ; do
+    if [[ -d "$candidate/dev" && -d "$candidate/weather-api" ]]; then
+      ( cd "$candidate" && pwd ); return 0
+    fi
+  done
+  return 1
+}
+SIDECAR_ROOT="$( find_sidecar_root )" || {
+  echo "ERROR: could not locate sidecar/{dev,weather-api}. Tried upstream and reference layouts." >&2
+  exit 1
+}
+
+echo "[1/2] llm-agent  (source: $SIDECAR_ROOT/dev)"
 az acr build --registry "$ACR_NAME" \
   --image agent-id-dev/llm-agent:1.0.0 \
   --platform linux/amd64 \
-  "$REPO_ROOT/reference/repo/sidecar/dev"
+  "$SIDECAR_ROOT/dev"
 
-echo "[2/2] weather-api"
+echo "[2/2] weather-api  (source: $SIDECAR_ROOT/weather-api)"
 az acr build --registry "$ACR_NAME" \
   --image agent-id-dev/weather-api:1.0.0 \
   --platform linux/amd64 \
-  "$REPO_ROOT/reference/repo/sidecar/weather-api"
+  "$SIDECAR_ROOT/weather-api"

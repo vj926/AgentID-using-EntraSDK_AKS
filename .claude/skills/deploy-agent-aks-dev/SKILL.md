@@ -9,7 +9,7 @@ End-to-end, **secretless** deployment of an agent that uses the Microsoft Entra 
 
 One federation chain — Kubernetes ServiceAccount → Blueprint app. **No client secrets in the cluster.** No UAMI in the middle.
 
-**Canonical manifests:** [`sidecar/aks/`](../../../sidecar/aks/). This skill is the automated, fast-path counterpart.
+**Canonical manifests:** [`manifests/`](./manifests/). Long-form walkthrough tutorial: [`deploy/azure/kubernetes-service/dev/README.md`](../../../deploy/azure/kubernetes-service/dev/README.md).
 
 ## When to Use
 

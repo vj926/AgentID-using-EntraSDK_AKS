@@ -55,10 +55,30 @@ kubectl exec     -n agentid deploy/llm-agent -c sidecar -- env | grep ^AZURE_
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| OBO sign-in fails with `AADSTS65001` | Agent → Graph User.Read not admin-consented | Run `grant-agent-obo-consent.ps1` from the ACA skill |
-| OBO sign-in fails with `AADSTS50011: redirect URI mismatch` | Agent FQDN not added to SPA app | Run `add-spa-redirect-uri.sh` with `APP_FQDN=<LB IP>` |
-| OBO sign-in works but agent can't call Graph as user | Blueprint not configured for OBO | Re-run upstream `setup-obo-blueprint*` script |
+| OBO sign-in fails with `AADSTS65001` | Agent → Graph User.Read not admin-consented | Run `scripts/grant-agent-obo-consent.ps1` (AKS-local copy) |
+| OBO sign-in fails with `AADSTS50011: redirect URI mismatch` | Agent FQDN not added to SPA app | Run `scripts/add-spa-redirect-uri.sh` with `APP_FQDN=<LB IP>` |
+| OBO sign-in works but agent can't call Graph as user | Blueprint not configured for OBO | Re-run `scripts/setup-obo-blueprint-for-aks.ps1` |
 | weather-api returns 401 to agent | `TENANT_ID` env on weather-api wrong, or `appid` in token doesn't match Agent ID | Confirm both containers see the same `TENANT_ID`; check `kubectl logs deploy/weather-api` for the validation error |
+| Sign-in popup throws `pkce_not_created: TypeError: Cannot read properties of undefined (reading 'subtle')` | MSAL needs `window.crypto.subtle`, which browsers gate on **secure context**. `http://<raw-IP>` is not a secure context; `http://localhost:*` is exempt. | Run `scripts/port-forward.sh` and use `http://localhost:8080` for sign-in. Production-style fix: front the Service with HTTPS (cert-manager + NGINX, or AGIC + Key Vault). |
+
+## Cross-tenant federation
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `03-federate-blueprint.ps1` fails with `Authorization_RequestDenied` | `Connect-MgGraph` ran against the wrong tenant (the Azure-sub tenant, not the Entra tenant where the Blueprint lives) | Re-run with explicit `-TenantId $TENANT_ID` (the Entra/Blueprint tenant), independent of `SUBSCRIPTION_TENANT_ID` |
+| `az aks ...` works but Graph calls 401 | Single `az login` only covered one tenant; CLI cached the wrong context for Graph | `az login --tenant $TENANT_ID` once, then `az login --tenant $SUBSCRIPTION_TENANT_ID` and `az account set --subscription $SUBSCRIPTION_ID`. The two tokens live side-by-side. |
+| Sidecar logs `AADSTS70021` even though FIC was created | FIC was added on the Blueprint **in the Azure-sub tenant**, not the Entra tenant | Delete the wrong FIC. Recreate it on the Blueprint app in the Entra tenant (`TENANT_ID`). |
+| Pod env shows `AZURE_TENANT_ID=$SUBSCRIPTION_TENANT_ID` | `40-agent.yaml` rendered before `TENANT_ID` was the Entra tenant | Re-render manifests with `TENANT_ID` set to the Entra/Blueprint tenant, `kubectl apply`, restart pod |
+
+See [`cross-tenant-federation.md`](./cross-tenant-federation.md) for the full pattern.
+
+## Manifest rendering (`envsubst`)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Rendered YAML still contains `$TENANT_ID` literal | `envsubst` without an explicit var list substitutes **only exported** vars; if you forgot to `source /tmp/deploy-vars.sh` or used `set` (not `export`), nothing happens | `set -a; source /tmp/deploy-vars.sh; set +a` so all assignments are auto-exported |
+| Rendered YAML has empty strings where vars should be | Variable was sourced but had a blank value, or shell variable shadowed it | `echo "TENANT_ID=$TENANT_ID"` before rendering. Prefer the explicit-varlist form: `envsubst '$TENANT_ID $BLUEPRINT_APP_ID ...' < file.yaml` to fail loudly on typos |
+| `envsubst: command not found` (Windows / Git Bash) | `gettext` not installed | Git Bash ships it under `/usr/bin/envsubst.exe`; otherwise `winget install GnuWin32.Gettext` or `choco install gettext` |
 
 ## Networking
 

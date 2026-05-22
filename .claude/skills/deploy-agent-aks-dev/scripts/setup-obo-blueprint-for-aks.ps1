@@ -3,7 +3,7 @@
 # This is the AKS copy of setup-obo-blueprint-for-aca.ps1 — content is identical
 # because the Entra/Graph configuration is k8s-agnostic. The only reason it
 # lives here too is so the AKS skill is self-contained and the PR ships the
-# scripts alongside the manifests in sidecar/aks/.
+# scripts alongside the manifests in this skill.
 #
 # What it does (all idempotent):
 #   A. Set identifierUris = api://<BlueprintAppId>          (Blueprint app)

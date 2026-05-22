@@ -14,11 +14,27 @@ CLUSTER="agentid-smoke"
 NS="agentid"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-# Manifests live in sidecar/aks/manifests/ relative to repo root.
-# Resolve: skill scripts are at .claude/skills/deploy-agent-aks-dev/scripts/
-# so repo root is 4 up.
+# Manifests live in this skill's manifests/ directory (sibling of scripts/).
+MANIFESTS="$SCRIPT_DIR/../manifests"
+# Skill scripts are at .claude/skills/deploy-agent-aks-dev/scripts/ so the workspace
+# (or upstream repo) root is 4 up.
 REPO_ROOT="$( cd "$SCRIPT_DIR/../../../.." && pwd )"
-MANIFESTS="$REPO_ROOT/sidecar/aks/manifests"
+
+# Locate sidecar dev/ and weather-api/ sources. Two supported layouts:
+#   A) Upstream repo: <repo>/sidecar/{dev,weather-api,aks}
+#   B) Reference clone: <ws>/reference/repo/sidecar/{dev,weather-api}
+find_sidecar_root() {
+  local candidate
+  for candidate in \
+      "$REPO_ROOT/sidecar" \
+      "$REPO_ROOT/reference/repo/sidecar" ; do
+    if [[ -d "$candidate/dev" && -d "$candidate/weather-api" ]]; then
+      ( cd "$candidate" && pwd ); return 0
+    fi
+  done
+  return 1
+}
+SIDECAR_ROOT="$( find_sidecar_root )" || fail "could not locate sidecar/{dev,weather-api}"
 
 if [[ "${1:-}" == "--cleanup" ]]; then
   kind delete cluster --name "$CLUSTER" || true
@@ -51,9 +67,9 @@ fi
 kubectl cluster-info --context "kind-$CLUSTER"
 
 echo "==> [2/7] Build images locally"
-docker build -t agent-id-dev/llm-agent:smoke   "$REPO_ROOT/reference/repo/sidecar/dev"        > /tmp/kind-build-agent.log 2>&1 \
+docker build -t agent-id-dev/llm-agent:smoke   "$SIDECAR_ROOT/dev"         > /tmp/kind-build-agent.log 2>&1 \
   || { tail -50 /tmp/kind-build-agent.log; fail "image build (llm-agent) — see /tmp/kind-build-agent.log"; }
-docker build -t agent-id-dev/weather-api:smoke "$REPO_ROOT/reference/repo/sidecar/weather-api" > /tmp/kind-build-weather.log 2>&1 \
+docker build -t agent-id-dev/weather-api:smoke "$SIDECAR_ROOT/weather-api" > /tmp/kind-build-weather.log 2>&1 \
   || { tail -50 /tmp/kind-build-weather.log; fail "image build (weather-api) — see /tmp/kind-build-weather.log"; }
 
 echo "==> [3/7] Load images into kind"
